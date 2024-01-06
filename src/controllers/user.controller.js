@@ -4,6 +4,23 @@ import { User } from  "../models/user.model.js"
 import { uplodOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
 
+
+const generateAccessAndRefreshToken = async(userId) => {
+    try {
+        const user = await User.findById(userId)
+        const accessToken = user.generateAccessToken()
+        const refreshToken = user.generateRefreshToken()
+
+        user.refreshToken = refreshToken
+        await user.save({ validateBeforeSave: false })
+
+        return { accessToken, refreshToken }
+
+    } catch (error) {
+        throw new ApiError(500, "Someting went wrong while generating refresh & access token")
+    }
+}
+
 const registerUser = asyncHandler( async (req, res) => {
     // get user details from frontend
     // validation - not empty
@@ -64,6 +81,11 @@ const registerUser = asyncHandler( async (req, res) => {
         "-passwaord -refreshToken"
     )
 
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
     if(!createdUser) {
         throw new ApiError(500, "Something went wrong while registring the user")
     }
@@ -73,4 +95,37 @@ const registerUser = asyncHandler( async (req, res) => {
     )
 })
 
-export { registerUser }
+const loginUser = asyncHandler(async (req, res) => {
+    // req body => data
+    // username or email
+    // find the user
+    // check password
+    // access and refresh token
+    // send cookies
+
+    const {email, username, password} = req.body
+
+    if(!username || !email) {
+        throw new ApiError(400, "Username or email is required")
+    }
+
+    const user = await User.findOne({
+        $or: [{username}, {email}]
+    })
+
+    if (!user) throw new ApiError(404, "User doesn't exist")
+
+    const ispasswaordValid = await user.isPasswordCorrect(password)
+
+    if (!ispasswaordValid) throw new ApiError(401, "Invalid user credentials")
+    
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(user._id)
+
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+
+})
+
+export { 
+    registerUser,
+    loginUser
+}
